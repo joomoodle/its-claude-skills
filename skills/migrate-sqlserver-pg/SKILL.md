@@ -15,6 +15,8 @@ Cubre: cambios de código, esquema Flyway, script Python de datos, CI/CD y runbo
 5. **No concatenar input del usuario en queries** — CA2100/CA3001. Siempre parámetros.
 6. **No agregar `GRANT <rol> TO <usuario>`** en migraciones Flyway. Es paso manual del DBA con superusuario.
 7. **NO cambiar `DateTime.Now` a `DateTime.UtcNow`** en el código de negocio.
+8. **Todo archivo repeatable (`R__*.sql`) que cree una función o procedimiento PL/pgSQL debe terminar con `GRANT EXECUTE` explícito a `usr_app_role`.**
+   Flyway corre con `SET ROLE db_creator` (vía `initSql`), así que los objetos quedan bajo ese owner. El usuario de la API pertenece a `usr_app_role`, no a `db_creator` — sin el grant no puede ejecutar las funciones.
 
 ---
 
@@ -141,7 +143,35 @@ ALTER DEFAULT PRIVILEGES FOR ROLE db_creator IN SCHEMA public
   GRANT SELECT ON TABLES TO dev_team, usr_dba_role;
 ```
 
-### 2.5 V003 — grant explícito para ambientes con V001 como baseline
+### 2.5 Migraciones repeatables — GRANT EXECUTE obligatorio
+
+Cada archivo `R__*.sql` que cree una función o procedimiento debe terminar con el grant correspondiente, inmediatamente después del `$$;` de cierre:
+
+```sql
+-- Función
+CREATE OR REPLACE FUNCTION mi_funcion(variadic text[])
+RETURNS ... LANGUAGE plpgsql AS $$
+BEGIN
+  ...
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION mi_funcion(variadic text[]) TO usr_app_role;
+
+-- Procedimiento
+CREATE OR REPLACE PROCEDURE mi_procedimiento(variadic text[])
+LANGUAGE plpgsql AS $$
+BEGIN
+  ...
+END;
+$$;
+
+GRANT EXECUTE ON PROCEDURE mi_procedimiento(variadic text[]) TO usr_app_role;
+```
+
+Aplica **solo a repeatables** (`R__*.sql`). Los versioned (`V__*.sql`) de tablas/secuencias ya tienen sus grants en el baseline.
+
+### 2.6 V003 — grant explícito para ambientes con V001 como baseline
 
 Para ambientes donde V001 ya existía y se marcó como baseline, los `ALTER DEFAULT PRIVILEGES` de V001 no otorgaron permisos en tablas existentes. Crear `V003__grant_permissions.sql` con `GRANT ... ON ALL TABLES`:
 
@@ -398,7 +428,7 @@ validate-migrations:
     PROXY_VERSION: v2.14.1
     PROXY_URL: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/${PROXY_VERSION}/cloud-sql-proxy.linux.amd64
     FLYWAY_CONFIG_FILES: db/flyway.conf
-    FLYWAY_URL: "jdbc:postgresql://127.0.0.1:1435/NombreDB?sslmode=disable"
+    FLYWAY_URL: "jdbc:postgresql://127.0.0.1:1435/${DB_NAME}?sslmode=disable"
   before_script:
     - echo "$SA_KEY" > /tmp/sa.json
     - curl -sSLo /tmp/cloud-sql-proxy "$PROXY_URL"
@@ -409,6 +439,8 @@ validate-migrations:
     - flyway -user="$DB_USER" -password="$DB_PASSWORD" repair
     - flyway -user="$DB_USER" -password="$DB_PASSWORD" -connectRetries=20 migrate
 ```
+
+Cada job hijo inyecta `DB_NAME: $DEV_DB_NAME` / `$PRE_DB_NAME` / `$PROD_DB_NAME`.
 
 Nota: el proxy usa puerto `1435` para Cloud SQL PostgreSQL en CI (evita conflictos con postgres local). La `FLYWAY_URL` lleva ese puerto.
 
@@ -427,10 +459,35 @@ Ejecutar `baseline-dev-db` / `baseline-pre-db` / `baseline-prod-db` manualmente 
 
 ### 4.4 Variables de CI necesarias
 
-Para cada ambiente (dev/pre/prod):
-- `SA_KEY` — service account JSON (GCP)
-- `CLOUDSQL_INSTANCE` — `proyecto:region:instancia`
-- `DB_USER` / `DB_PASSWORD` — usuario de migración con CONNECT + permiso de ejecutar DDL como `db_creator`
+Variables que deben existir en **GitLab → Settings → CI/CD → Variables**:
+
+**Pre-existentes** (del proyecto original):
+
+| Variable | Descripción |
+|----------|-------------|
+| `GCP_SERVICE_ACCOUNT` | SA JSON dev |
+| `GCP_Project_id_dev` | Project ID dev |
+| `DEV_CLOUDSQL_INSTANCE` | `proyecto:region:instancia` dev |
+| `DEV_BD_SUITE` | Connection string .NET dev |
+| `DEV_VPC_CONNECTOR` | VPC connector dev |
+| `DEV_DB_MIGRATION_USER` | Usuario Flyway dev |
+| `DEV_DB_MIGRATION_PASSWORD` | Password Flyway dev |
+| (ídem para `PRE_*` y `PROD_*`) | |
+
+**Nuevas — agregar al migrar a PostgreSQL:**
+
+| Variable | Valor | Scope |
+|----------|-------|-------|
+| `DEV_DB_NAME` | nombre real de la BD en Cloud SQL | dev |
+| `PRE_DB_NAME` | nombre real de la BD en Cloud SQL | pre |
+| `PROD_DB_NAME` | nombre real de la BD en Cloud SQL | prod |
+
+Para verificar el nombre real de la BD antes de configurar la variable:
+```bash
+psql -h 127.0.0.1 -p 5432 -U $PG_USER -l
+```
+
+**Importante**: GitLab enmascara valores de variables en los logs (`[MASKED]`), por eso no se ve si el valor es incorrecto — el error aparece como `database "[MASKED]" does not exist`. Verificar siempre con `psql -l` antes de configurar.
 
 ---
 
@@ -454,3 +511,5 @@ Para cada ambiente (dev/pre/prod):
 - [ ] Build .NET pasa (dotnet build, dotnet test)
 - [ ] validate-migrations en CI pasa (Flyway contra postgres efímero)
 - [ ] No hay stored procedures en el proyecto (verificar: `grep -r "CREATE PROCEDURE" source/`)
+- [ ] Cada `R__*.sql` con función/procedimiento termina con `GRANT EXECUTE ON FUNCTION/PROCEDURE ... TO usr_app_role`
+- [ ] Variables `DEV_DB_NAME` / `PRE_DB_NAME` / `PROD_DB_NAME` definidas en GitLab CI/CD
