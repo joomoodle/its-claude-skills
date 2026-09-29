@@ -6,6 +6,124 @@ Al invocarse, usar estas reglas como checklist al crear o revisar stored procedu
 
 ---
 
+## 0. PostgreSQL: FUNCTION vs PROCEDURE — cuándo usar cada uno
+
+En SQL Server todo es `Stored Procedure` o `Function`. En PostgreSQL la elección importa porque tienen capacidades transaccionales distintas.
+
+### Tabla de decisión
+
+| Pregunta | Respuesta | Usar |
+|----------|-----------|------|
+| ¿Necesita hacer COMMIT o ROLLBACK propio? | Sí | **PROCEDURE** |
+| ¿Lo llama la aplicación como operación principal (INSERT/UPDATE/DELETE)? | Sí | **PROCEDURE** |
+| ¿Devuelve un valor calculado o de validación? | Sí | **FUNCTION** |
+| ¿Devuelve filas (como un SELECT)? | Sí | **FUNCTION RETURNS TABLE / SETOF** |
+| ¿Es lógica auxiliar llamada desde otra función/procedure? | Sí | **FUNCTION** |
+
+### Diferencias clave
+
+| Característica | FUNCTION | PROCEDURE |
+|---------------|----------|-----------|
+| Manejo de transacciones | ❌ No puede COMMIT/ROLLBACK | ✅ Puede COMMIT/ROLLBACK (PG 11+) |
+| Valor de retorno | `RETURNS tipo` | `INOUT` parámetros |
+| Cómo se llama | `SELECT fn_valida(1)` o en expresiones | `CALL spp_procesa(...)` |
+| Error en EXCEPTION | Rollback al savepoint implícito del bloque; la transacción exterior sigue | Rollback total si se hace ROLLBACK explícito |
+| Equivalente T-SQL | `Scalar Function` / `Table-Valued Function` | `Stored Procedure` |
+| Prefijo IT Strategy | `fn_` | `spp_` |
+
+### FUNCTION — cuándo y cómo
+
+Usar para validaciones, cálculos, lookups y lógica auxiliar. **No puede controlar su propia transacción.**
+
+```sql
+-- Función escalar: devuelve un valor
+CREATE OR REPLACE FUNCTION public.fn_valida_usuario(p_n_id_usuario INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    w_resultado INTEGER := 0;
+BEGIN
+    SELECT id_error INTO w_resultado
+    FROM public.cat_permisos_tbl
+    WHERE id_usuario = p_n_id_usuario AND activo = TRUE;
+
+    RETURN COALESCE(w_resultado, 0);
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Solo hace rollback al savepoint del bloque; NO afecta la transacción exterior
+        RETURN -1;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.fn_valida_usuario(INTEGER) TO usr_app_role;
+
+-- Función que devuelve filas (equivalente a Table-Valued Function)
+CREATE OR REPLACE FUNCTION public.fn_clientes_activos()
+RETURNS TABLE(id_cliente INTEGER, nombre VARCHAR, rfc VARCHAR)
+LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN QUERY
+    SELECT c.id_cliente, c.nombre, c.rfc
+    FROM public.clientes_tbl c
+    WHERE c.id_estatus_cliente = 1;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.fn_clientes_activos() TO usr_app_role;
+```
+
+### PROCEDURE — cuándo y cómo
+
+Usar cuando la operación necesita manejar su propia transacción (equivalente al SP de SQL Server que hace DML y devuelve estatus/mensaje).
+
+```sql
+CREATE OR REPLACE PROCEDURE public.spp_registra_pago(
+    p_n_id_cliente  INTEGER,
+    p_n_monto       NUMERIC(18,2),
+    INOUT pn_estatus  INTEGER      DEFAULT 0,
+    INOUT ps_mensaje  VARCHAR(250) DEFAULT ''
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    w_error          INTEGER      := 0;
+    w_desc_error     VARCHAR(250) := '';
+    w_etapa_proceso  VARCHAR(250) := '';
+BEGIN
+    -- Validaciones fuera de transacción
+    w_etapa_proceso := 'Validación de cliente.';
+    w_error := public.fn_valida_usuario(p_n_id_cliente);  -- llama FUNCTION
+    IF w_error <> 0 THEN
+        w_desc_error := 'Cliente no autorizado.';
+        RAISE EXCEPTION '%', w_desc_error USING ERRCODE = 'P0001';
+    END IF;
+
+    -- DML con transacción propia
+    w_etapa_proceso := 'Inserción de pago.';
+    INSERT INTO public.pagos_tbl (id_cliente, monto, fecha_alta)
+    VALUES (p_n_id_cliente, p_n_monto, NOW());
+
+    COMMIT;
+    pn_estatus := 0;
+    ps_mensaje := 'Pago registrado exitosamente.';
+
+EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+        ROLLBACK;
+        pn_estatus := w_error;
+        ps_mensaje := LEFT(CONCAT(w_desc_error, ' [Etapa: ', w_etapa_proceso, ']'), 250);
+    WHEN OTHERS THEN
+        ROLLBACK;
+        pn_estatus := -1;
+        ps_mensaje := LEFT(CONCAT('Error [', SQLSTATE, ']: ', SQLERRM,
+                           ' [Etapa: ', w_etapa_proceso, ']'), 250);
+END;
+$$;
+
+GRANT EXECUTE ON PROCEDURE public.spp_registra_pago(INTEGER, NUMERIC, INTEGER, VARCHAR) TO usr_app_role;
+```
+
+---
+
 ## 1. Convención de Nomenclatura
 
 ### T-SQL
