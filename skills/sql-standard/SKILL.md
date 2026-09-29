@@ -145,12 +145,62 @@ Todo en **snake_case minúsculas**.
 | Tipo | Prefijo/Sufijo | Ejemplo |
 |------|---------------|---------|
 | Stored Procedure | `spp_` | `public.spp_procesa_pago` |
+| Stored Procedure (heredado) | `spa_` | `public.spa_procesa_pago` |
 | Función | `fn_` | `public.fn_valida_usuario` |
 | Parámetro numérico | `p_n_` | `p_n_id_rel_lab` |
 | Parámetro cadena | `p_s_` | `p_s_codigo_empleado` |
 | Parámetro INOUT salida | `pn_` / `ps_` | `pn_estatus`, `ps_mensaje` |
 | Variable interna | `w_` | `w_etapa_proceso` |
 | Tabla temporal | sin prefijo | creadas con `CREATE TEMP TABLE` |
+
+> **Nota migración**: objetos migrados desde SQL Server pueden conservar el prefijo `spa_` heredado de `Spa_`. Al crear objetos nuevos en PG, usar siempre `spp_`.
+
+### Firma variadic (patrón Dapper / migración SQL Server)
+
+Cuando el objeto es llamado desde .NET vía Dapper con `CommandType.StoredProcedure`, Npgsql envía los parámetros posicionalmente (`$1`, `$2`, ...). Para compatibilidad usar la firma `variadic text[]`:
+
+```sql
+CREATE OR REPLACE FUNCTION public.fn_ejemplo(
+    variadic args text[] default array[]::text[]
+)
+RETURNS TABLE(...)
+LANGUAGE plpgsql AS $$
+DECLARE
+    w_param1 int  := nullif(args[1], '')::int;
+    w_param2 text := nullif(args[2], '');
+BEGIN
+    ...
+END;
+$$;
+```
+
+- `args[1]` corresponde al primer parámetro enviado por la app (índice base 1).
+- Usar `nullif(args[n], '')::tipo` para convertir con seguridad.
+- Esta firma es **solo para compatibilidad con Dapper**. Objetos internos (llamados desde otros SPs/funciones) deben usar parámetros tipados normales.
+
+### Alias de columnas en RETURNS TABLE — Dapper mapping
+
+Dapper mapea columnas por nombre, case-insensitive pero sensible a underscores. `id_marca` **NO** mapea a `IdMarca`.
+
+**Regla**: en `RETURNS TABLE` de funciones consumidas por Dapper, usar alias sin guion bajo que coincidan con la propiedad C# en minúsculas:
+
+```sql
+RETURNS TABLE(
+    idmarca         int,      -- mapea a IdMarca
+    tipooperacion   text,     -- mapea a TipoOperacion
+    idusuarioact    int,      -- mapea a IdUsuarioAct
+    fechaact        timestamptz
+)
+```
+
+En el `SELECT` usar `AS` explícito si el nombre de columna en BD tiene guion bajo:
+
+```sql
+SELECT a.id_marca AS idmarca,
+       a.tipo_operacion AS tipooperacion,
+       a.id_usuario_act AS idusuarioact,
+       a.fecha_act AS fechaact
+```
 
 ---
 
@@ -439,6 +489,20 @@ Aplica igual en ambos motores.
 
 ## 4. Plantilla Canónica PL/pgSQL
 
+### Archivos R__ (repeatable): DROP IF EXISTS obligatorio
+
+`CREATE OR REPLACE` no permite cambiar la firma (parámetros o tipo de retorno) de un objeto existente. En archivos Flyway `R__*.sql` siempre anteponer el DROP antes del CREATE:
+
+```sql
+DROP FUNCTION  IF EXISTS public.fn_ejemplo(variadic text[]);
+-- o
+DROP PROCEDURE IF EXISTS public.spp_ejemplo(variadic text[]);
+
+CREATE OR REPLACE FUNCTION/PROCEDURE ...
+```
+
+Esto permite que Flyway re-ejecute el archivo aunque la firma cambie entre versiones.
+
 ```sql
 /*****************************************************************************
 Nombre Objeto: public.spp_ejemplo_estandar
@@ -689,3 +753,6 @@ WHERE c.id_estatus_cliente = 1;
 - [ ] `IF EXISTS` / `IF NOT EXISTS` antes de ALTER o INSERT semilla
 - [ ] Sin `DELETE`/`TRUNCATE` sin filtro estricto en tablas operativas
 - [ ] `GRANT EXECUTE ON PROCEDURE/FUNCTION ... TO usr_app_role` al final de cada `R__*.sql`
+- [ ] Archivos `R__*.sql`: `DROP FUNCTION/PROCEDURE IF EXISTS` antes de `CREATE OR REPLACE`
+- [ ] Funciones consumidas por Dapper: alias en `RETURNS TABLE` sin guion bajo que coincidan con propiedades C#
+- [ ] Firma `variadic text[]` solo para objetos llamados desde la app vía Dapper; objetos internos usan parámetros tipados
