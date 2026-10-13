@@ -99,6 +99,7 @@ Cubre:
 - Cómo llega el tema a cada proyecto: `ThemeProvider` (suite-props con `defaultTheme`, catalogos-suite vía `storeTheme$`), Tailwind `k-*` (auth-front), `configureAlerts` (ui-kit), MUI sin tema
 - Consumo en styled-components, `useTheme`/`sx`, transparencias con sufijo hex, fallbacks
 - Manrope declarada pero no cargada; grises permitidos sin token
+- Proyectos **sin** `@it-strategy/utilities`: cómo detectarlo y cómo definir el tema local (styled-components, CSS/SCSS `--k-*`, Tailwind, MUI, carga de Manrope)
 - Deuda conocida (HEX hardcodeados, colores fuera de marca, rojos de error, mocks duplicados), comandos `grep` para detectarla y cómo agregar un token nuevo
 - Checklist de revisión de estilos
 

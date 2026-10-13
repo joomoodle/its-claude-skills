@@ -1,6 +1,6 @@
 ---
 name: kontrolia-theme
-description: Tema Kontrolia (Brand Guide Oct 2025) en los micro-frontends de IT Strategy — paleta, tokens semánticos vs legacy, gradiente, tipografía Manrope, cómo se inyecta (styled-components, Tailwind, Alert/Toast) y cómo consumir colores sin hardcodear HEX. Usar al escribir o revisar estilos, colores, fondos, bordes, gradientes o fuentes en auth-front, catalogos-suite, suite-props, ui-shared o cualquier MFE de la suite.
+description: Tema Kontrolia (Brand Guide Oct 2025) en los micro-frontends de IT Strategy — paleta, tokens semánticos vs legacy, gradiente, tipografía Manrope, cómo se inyecta (styled-components, Tailwind, Alert/Toast) cómo consumir colores sin hardcodear HEX y cómo definir el tema local en proyectos que NO tienen @it-strategy/utilities (apps Vite/standalone, CSS/SCSS, Tailwind, MUI). Usar al escribir o revisar estilos, colores, fondos, bordes, gradientes o fuentes en auth-front, catalogos-suite, suite-props, ui-shared o cualquier MFE de la suite.
 ---
 # Skill: kontrolia-theme
 Trigger: `/kontrolia-theme`
@@ -18,8 +18,9 @@ Guía de uso del tema Kontrolia (colores, gradiente, tipografía) en los micro-f
 1. **El tema es estático.** No viene de API ni cambia en runtime. `storeTheme.setTheme()` e `initTheme()` son **no-op intencionales**; no llamarlos para cambiar colores.
 2. **Nunca hardcodear un HEX de la paleta** (`#0c6478`, `#09d1c7`, `#82ee99`, `#424f55`, `#EFEFEF`, `#FFFFFF`). Usar el token.
 3. **Código nuevo → tokens semánticos** (`primary`, `secondary`, `dark`…). En archivos existentes, respetar la nomenclatura que ya usa el archivo. **No mezclar legacy y semánticos en el mismo componente.**
-4. **No crear** constantes locales de color, CSS variables sueltas ni paletas paralelas. Si falta un token, se agrega en `ITheme.ts` (§8).
-5. No usar colores fuera del Brand Guide sin justificación (azules MUI `#1976d2`, `#007bff`, índigos, el teal antiguo `#00B3B0`, `custom-pink`…).
+4. **No crear** constantes locales de color, CSS variables sueltas ni paletas paralelas. Si falta un token, se agrega en `ITheme.ts` (§8). Única excepción: proyectos **sin** `@it-strategy/utilities`, que tienen **un solo** archivo de tema local, copia fiel de `ITheme.ts` (§2.4).
+5. **Primero detectar** si el proyecto tiene `@it-strategy/utilities` (§2.4): de eso depende de dónde sale el tema.
+6. No usar colores fuera del Brand Guide sin justificación (azules MUI `#1976d2`, `#007bff`, índigos, el teal antiguo `#00B3B0`, `custom-pink`…).
 
 ---
 
@@ -119,6 +120,108 @@ Usar `text-k-primary`, `bg-k-primary`, `border-k-secondary`, `text-k-dark`, `bg-
 
 - ui-kit: `configureAlerts(theme)` una vez al iniciar para que `Alert`/`Toast` tomen los colores del tema (por defecto ya usan Kontrolia).
 - catalogos-suite usa todavía su `src/utils/Alert.js` local (lee `storeTheme`; el botón cancelar usa `primaryColor` mientras ui-kit usa `dark`). Al migrar, reemplazar por `Alert` de ui-kit (requiere ui-kit 2.x).
+
+### 2.4 Proyectos SIN `@it-strategy/utilities` (sin props)
+
+No todos los proyectos corren dentro del container single-spa ni tienen `@it-strategy/utilities` (p. ej. apps Vite independientes como `front-expedientes-cliente`, PWAs, apps standalone). En esos proyectos **no existe `storeTheme`** ni `defaultTheme`: el tema se define **localmente** como copia fiel de la fuente de verdad.
+
+**Detectar** si el proyecto tiene utilities:
+```bash
+grep -rln "@it-strategy/utilities" src | head        # sin resultados → no tiene props
+grep -n "@it-strategy/utilities" webpack.config.* 2>/dev/null
+grep -n "<nombre-del-mfe>" ../container-suite/src/index.ejs   # ¿está en el import map?
+```
+
+**Reglas para estos proyectos:**
+- Un **único** archivo de tema: `src/theme/kontrolia.ts` (o `.js`). Es copia de `suite-props/src/interface/ITheme.ts` → mismos nombres de token y mismos valores. No inventar nombres (`brandColor`, `mainColor`…) ni subconjuntos con otros nombres.
+- Encabezado obligatorio en el archivo: `// Copia de suite-props/src/interface/ITheme.ts — mantener sincronizado`.
+- **No** importar `storeTheme`, `defaultTheme` ni nada de `@it-strategy/utilities` (rompe en runtime: el módulo no existe).
+- Todo el proyecto consume colores de ese archivo (o de lo que se genere desde él: CSS vars, Tailwind, SCSS). Ningún HEX de la paleta fuera de él.
+
+#### Opción A — styled-components (recomendada si usa `@it-strategy/ui-kit`)
+```ts
+// src/theme/kontrolia.ts
+// Copia de suite-props/src/interface/ITheme.ts — mantener sincronizado
+export const kontroliaTheme = {
+  fontFamily: 'Manrope, sans-serif',
+  fontSize: '14px',
+  // legacy (los usa ui-kit)
+  primaryColor: '#0c6478', secondColor: '#09d1c7', primaryFontColor: '#424f55',
+  primaryBackgroundColor: '#FFFFFF', secondBackgroundColor: '#EFEFEF',
+  // semánticos
+  primary: '#0c6478', secondary: '#09d1c7', accent: '#82ee99', dark: '#424f55',
+  light: '#EFEFEF', white: '#FFFFFF', background: '#FFFFFF', surface: '#EFEFEF',
+  textPrimary: '#424f55', textSecondary: '#0c6478', textBody: '#424f55',
+  success: '#82ee99', info: '#09d1c7',
+  gradients: { primary: 'linear-gradient(180deg, #82ee99 19.23%, #0c6478 84.94%)' },
+  isKontrolia: true,
+} as const
+export type KontroliaTheme = typeof kontroliaTheme
+```
+```ts
+// src/styled.d.ts
+import 'styled-components'
+import type { KontroliaTheme } from './theme/kontrolia'
+declare module 'styled-components' { export interface DefaultTheme extends KontroliaTheme {} }
+```
+```tsx
+// root / main.tsx
+import { ThemeProvider } from 'styled-components'
+import { configureAlerts } from '@it-strategy/ui-kit'   // solo si usa ui-kit ≥ 2
+import { kontroliaTheme } from './theme/kontrolia'
+
+configureAlerts(kontroliaTheme)
+<ThemeProvider theme={kontroliaTheme}><App /></ThemeProvider>
+```
+> Con ui-kit, incluir **también los tokens legacy**: varios componentes de la librería leen `primaryColor`, `secondColor`, `primaryFontColor`.
+
+#### Opción B — CSS / SCSS (sin styled-components)
+Generar variables CSS una sola vez y usarlas en todo el proyecto:
+```scss
+// src/styles/_kontrolia.scss — Copia de suite-props/src/interface/ITheme.ts — mantener sincronizado
+:root {
+  --k-primary: #0c6478;  --k-secondary: #09d1c7; --k-accent: #82ee99;
+  --k-dark: #424f55;     --k-light: #EFEFEF;     --k-white: #FFFFFF;
+  --k-gradient-primary: linear-gradient(180deg, #82ee99 19.23%, #0c6478 84.94%);
+  --k-font-family: 'Manrope', sans-serif;
+}
+```
+```scss
+.card { background: var(--k-light); border: 1px solid var(--k-secondary); color: var(--k-dark); }
+.title { color: var(--k-primary); font-family: var(--k-font-family); }
+// transparencias: color-mix(in srgb, var(--k-primary) 10%, transparent)
+```
+Si el proyecto ya tiene `_variables.scss`, definir ahí `$k-primary: var(--k-primary);` etc. en vez de HEX sueltos. Prefijo de variables: `--k-*` (igual que Tailwind de auth-front).
+
+#### Opción C — Tailwind
+```js
+// tailwind.config.js — importar del archivo de tema, no copiar HEX
+const { kontroliaTheme: t } = require('./src/theme/kontrolia')
+module.exports = { theme: { extend: {
+  colors: { 'k-primary': t.primary, 'k-secondary': t.secondary, 'k-accent': t.accent, 'k-dark': t.dark, 'k-light': t.light },
+  fontFamily: { sans: ['Manrope', 'sans-serif'] },
+  backgroundImage: { 'k-gradient': t.gradients.primary },
+} } }
+```
+
+#### MUI sin utilities
+Si el proyecto usa MUI directo, crear su tema desde el mismo archivo:
+```ts
+import { createTheme } from '@mui/material/styles'
+import { kontroliaTheme as t } from './kontrolia'
+export const muiTheme = createTheme({
+  palette: { primary: { main: t.primary }, secondary: { main: t.secondary }, success: { main: t.success }, text: { primary: t.dark } },
+  typography: { fontFamily: t.fontFamily },
+})
+// <MuiThemeProvider theme={muiTheme}><ThemeProvider theme={kontroliaTheme}>…</ThemeProvider></MuiThemeProvider>
+```
+
+#### Fuente
+Sin el container no hay `index.ejs` compartido: cargar Manrope en el `index.html` propio del proyecto:
+```html
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+```
 
 ---
 
@@ -250,7 +353,7 @@ storeTheme.setTheme({ primaryColor: 'red' })  // ❌ no-op, no tiene efecto
 
 1. Confirmar que no existe un alias (§1) que sirva.
 2. Agregarlo en `suite-props/src/interface/ITheme.ts` (interfaz `ITheme` **y** `defaultTheme`). Cambio en `@it-strategy/utilities` → impacta a todos los MFE: revisar consumidores antes de publicar.
-3. Actualizar los `.d.ts` locales de los MFE que lo usen y los mocks de standalone/jest (catalogos-suite).
+3. Actualizar los `.d.ts` locales de los MFE que lo usen, los mocks de standalone/jest (catalogos-suite) y las **copias locales** (`src/theme/kontrolia.*`, `_kontrolia.scss`) de los proyectos sin utilities (§2.4).
 4. Si lo usa ui-kit: ampliar `ui-shared/src/styled.d.ts` y, si aplica, `alertTheme.ts`.
 5. En auth-front: agregar la clase `k-*` correspondiente en `tailwind.config.js`.
 6. Documentar en `GUIA_TEMA_COLORES.md` y en esta skill.
@@ -259,6 +362,7 @@ storeTheme.setTheme({ primaryColor: 'red' })  // ❌ no-op, no tiene efecto
 
 ## 9. Checklist de revisión (estilos en un MR)
 
+- [ ] Tema tomado de la fuente correcta: `storeTheme$` / `defaultTheme` si hay `@it-strategy/utilities`; si no, del **único** archivo local `src/theme/kontrolia.*` (copia fiel, con encabezado de sincronía)
 - [ ] Sin HEX de la paleta Kontrolia hardcodeados (styled, `sx`, `style`, CSS, Tailwind arbitrario `bg-[#0c6478]`)
 - [ ] Sin colores fuera del Brand Guide (`#00B3B0`, azules MUI, índigos, `custom-*`)
 - [ ] Código nuevo con tokens semánticos; sin mezclar legacy y semánticos en el mismo componente

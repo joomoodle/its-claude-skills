@@ -88,17 +88,34 @@ git commit -m "chore(deps): actualizar @it-strategy/ui-kit a v2.0.0"
 
 ### 1.3 ThemeProvider (obligatorio)
 
-Los componentes leen colores del `ThemeProvider` de styled-components. La app (o el root del micro-frontend) debe envolverse una vez:
+Los componentes leen colores del `ThemeProvider` de styled-components. La app (o el root del micro-frontend) debe envolverse una vez. **De dónde sale el tema depende de si el proyecto tiene `@it-strategy/utilities` (props):**
+
+```bash
+grep -rln "@it-strategy/utilities" src | head   # sin resultados → proyecto sin props
+```
+
+**a) Con `@it-strategy/utilities`** (MFE dentro del container single-spa): tomar el tema del store compartido. `defaultTheme` **no** se exporta en runtime; no importar `@it-strategy/utilities/Interface/ITheme`.
+
+```jsx
+import { ThemeProvider } from 'styled-components'
+import { storeTheme } from '@it-strategy/utilities'
+
+const [theme, setTheme] = useState(storeTheme.getSnapshot?.() ?? {})
+useEffect(() => {
+  const sub = storeTheme.storeTheme$.subscribe(setTheme)
+  return () => sub.unsubscribe()
+}, [])
+
+<ThemeProvider theme={theme}><MyMFE /></ThemeProvider>
+```
+
+**b) Sin `@it-strategy/utilities`** (apps Vite/standalone, PWAs): crear **un único** archivo `src/theme/kontrolia.ts`, copia fiel de `suite-props/src/interface/ITheme.ts` incluyendo los tokens **legacy** (`primaryColor`, `secondColor`, `primaryFontColor`…) que leen los componentes de la librería. Plantilla completa en la skill `/kontrolia-theme` §2.4.
 
 ```tsx
 import { ThemeProvider } from 'styled-components'
-import { defaultTheme } from '@it-strategy/utilities/Interface/ITheme'
+import { kontroliaTheme } from './theme/kontrolia'
 
-export const App = () => (
-  <ThemeProvider theme={defaultTheme}>
-    <MyMFE />
-  </ThemeProvider>
-)
+<ThemeProvider theme={kontroliaTheme}><App /></ThemeProvider>
 ```
 
 ### 1.4 Tema de Alert y Toast (opcional, una vez al iniciar)
@@ -107,7 +124,7 @@ export const App = () => (
 
 ```ts
 import { configureAlerts } from '@it-strategy/ui-kit'
-configureAlerts(getTheme()) // colores, fontFamily, titleFontSize, textFontSize
+configureAlerts(theme) // con props: storeTheme.getSnapshot(); sin props: kontroliaTheme local
 ```
 
 ---
@@ -500,7 +517,7 @@ const Card = styled.div`
 ## 9. Checklist de revisión (MR de un micro-frontend)
 
 - [ ] `@it-strategy/ui-kit` instalado y versión fijada con `update-ui-kit.mjs` (lockfile + workspace commiteados)
-- [ ] `ThemeProvider` en el root
+- [ ] `ThemeProvider` en el root con el tema de la fuente correcta (`storeTheme$` con props; `src/theme/kontrolia.*` sin props)
 - [ ] Imports **nombrados** desde `@it-strategy/ui-kit` (sin default, sin rutas internas)
 - [ ] Pantallas dentro de `PageLayout`
 - [ ] Tablas con `DataTable` (no MUI Table / DataGrid / tabla local)

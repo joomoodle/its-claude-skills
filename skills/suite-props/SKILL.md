@@ -1,6 +1,6 @@
 ---
 name: suite-props
-description: Micro-frontend shell y librería compartida @it-strategy/utilities (repo suite-props) de la suite IT Strategy / Kontrolia — stores RxJS (storeUser, storeToast, storeLoader, storeTheme, storeNotificacion…), sidebar/header, dashboard y widgets, notificaciones push FCM, cliente Api y permisos por módulo. Usar al modificar suite-props o al consumir @it-strategy/utilities desde otro micro-frontend (sesión, token, toasts, loader, permisos, menú).
+description: Micro-frontend shell y librería compartida @it-strategy/utilities (repo suite-props) de la suite IT Strategy / Kontrolia — stores RxJS (storeUser, storeToast, storeLoader, storeTheme, storeNotificacion…), sidebar/header, dashboard y widgets, notificaciones push FCM, cliente Api y permisos por módulo. Usar al modificar suite-props o al consumir @it-strategy/utilities desde otro micro-frontend (sesión, token, toasts, loader, permisos, menú), y para saber qué usar en proyectos que NO tienen @it-strategy/utilities.
 ---
 # Skill: suite-props
 Trigger: `/suite-props`
@@ -101,6 +101,30 @@ const acciones = await storeUser.getActionsByModulo('catalogos/usuarios')
 - `@it-strategy/*` es external en webpack de los consumidores (salvo `@it-strategy/ui-kit`, que se bundlea).
 - Los tipos se declaran con un `.d.ts` local en cada consumidor (p. ej. `mf-gestion-nomina/src/types/theme-store.d.ts`). `pnpm build:types` genera `dist/it-strategy-utilities.d.ts`, pero no se publica.
 - En Jest, los consumidores mapean `@it-strategy/utilities` a un mock propio.
+
+### Proyectos SIN `@it-strategy/utilities`
+
+No todos los proyectos tienen props: solo existe para MFE montados por `container-suite` (import map de SystemJS). Apps Vite/standalone, PWAs o front-ends fuera del container (p. ej. `front-expedientes-cliente`) **no lo tienen** y no deben importarlo (el módulo no existe en runtime y el build/arranque falla).
+
+Detectar antes de usar cualquier `store*`:
+```bash
+grep -rln "@it-strategy/utilities" src | head                 # sin resultados → no tiene props
+grep -n "<nombre-del-mfe>" ../container-suite/src/index.ejs    # ¿está en el import map del container?
+```
+
+Equivalencias en un proyecto sin props:
+
+| Con props | Sin props |
+|---|---|
+| `storeTheme$` / `defaultTheme` | Archivo local único `src/theme/kontrolia.*` (skill `/kontrolia-theme` §2.4) |
+| `storeToast.handleToast` | `Toast` / `Alert` de `@it-strategy/ui-kit` (skill `/ui-kit`) |
+| `storeLoader.changeLoader` | Estado local / `loading` de los componentes ui-kit (`Button loading`, `DataTable loading`) |
+| `storeUser` (sesión, token) | Sesión propia del proyecto (su store: Zustand, Redux, context) — no replicar `localStorage.suite-user` |
+| `storeUser.getActionsByModulo` | Llamar directo `GET /authentication/AccionesModuloUsuario` si el proyecto usa permisos de la suite |
+| `CreateExcel` / `Table` | `exportExcel` / `DataTable` de ui-kit |
+| Clase `Api` de props | Cliente HTTP propio (apisauce/axios) con su interceptor de token y 401 |
+
+No copiar stores de suite-props a otro proyecto "para tenerlos": si un proyecto necesita estado cross-MFE, debe integrarse al container y consumir props.
 
 ---
 
