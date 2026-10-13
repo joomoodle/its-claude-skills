@@ -26,16 +26,20 @@ install_skill() {
 
   # Extraer trigger del SKILL.md (línea "Trigger: /...")
   local trigger
-  trigger=$(grep -m1 "^Trigger:" "$skill_file" | sed 's/Trigger: \///' || true)
+  trigger=$(grep -m1 "^Trigger:" "$skill_file" | sed -E 's/^Trigger:[[:space:]]*`?\/?//; s/`.*$//' || true)
 
   if [[ -z "$trigger" ]]; then
     echo "  ! No se encontró trigger en SKILL.md — agrega el entry a $CLAUDE_MD manualmente."
     return 0
   fi
 
-  # Extraer descripción (segunda línea no vacía del SKILL.md)
+  # Extraer descripción: campo `description:` del frontmatter YAML si existe;
+  # si no, la primera línea de texto después del encabezado y el Trigger.
   local description
-  description=$(awk 'NR>1 && /^[^#]/ && NF {print; exit}' "$skill_file")
+  description=$(awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}' "$skill_file")
+  if [[ -z "$description" ]]; then
+    description=$(awk 'NR>1 && /^[^#-]/ && !/^Trigger:/ && NF {print; exit}' "$skill_file")
+  fi
 
   local entry="# $trigger
 - **$trigger** (\`~/.claude/skills/$name/SKILL.md\`) - $description Trigger: \`/$trigger\`

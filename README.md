@@ -15,6 +15,7 @@ bash install.sh
 # O instalar solo una
 bash install.sh migrate-sqlserver-pg
 bash install.sh sql-standard
+bash install.sh ui-kit
 ```
 
 Reinicia Claude Code después de instalar.
@@ -71,8 +72,25 @@ Ver: [skills/sql-standard/SKILL.md](skills/sql-standard/SKILL.md)
 
 ---
 
+### `/ui-kit`
+Uso de la librería de componentes UI compartidos `@it-strategy/ui-kit` (Kontrolia) en los micro-frontends React. Se activa también de forma automática al trabajar en pantallas, formularios, tablas, modales, alertas o exportaciones.
+
+Cubre:
+- Regla de oro: si la librería tiene el componente, se usa la librería (tabla "necesitas → usa → en lugar de")
+- Instalación con `update-ui-kit.mjs`, peer dependencies, `ThemeProvider` y `configureAlerts`
+- Imports nombrados (la librería no tiene export default)
+- Catálogo de componentes con props clave: `PageLayout`, `DataTable`, `Modal`, `Button`, `SectionHeader`, `Input*`, `SelectField`, `SelectMultiple`, `InputAutocomplete`, `DateField`, `TimeField`, `RangeDateTimePicker`, `FileDropzone`, `Checkbox`, `Switch`, `Radio`, `ErrorBoundaryFallback`, `AccessDenied`
+- Utilidades: `Alert`, `Toast`, `exportExcel`, `isValidTime`
+- Patrón estándar de pantalla CRUD
+- Migración de código existente: comandos para detectar candidatos y tabla de equivalencias (MUI, mui/x-date-pickers, SweetAlert2, xlsx, react-dropzone…)
+- Tokens del tema Kontrolia, qué hacer si falta un componente y checklist de revisión de MR
+
+Ver: [skills/ui-kit/SKILL.md](skills/ui-kit/SKILL.md)
+
+---
+
 ## Agregar una nueva skill
 
 1. Crear `skills/<nombre>/SKILL.md`
-2. La primera línea del body (después del `# Skill:` y `Trigger:`) es la descripción que usa el instalador.
+2. Opcional (recomendado): frontmatter YAML con `name` y `description` para que Claude Code active la skill automáticamente. El instalador usa ese `description`; si no existe, usa la primera línea del body después de `# Skill:` y `Trigger:`.
 3. Hacer PR o push directo.
