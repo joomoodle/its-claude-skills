@@ -17,8 +17,6 @@ bash install.sh migrate-sqlserver-pg
 bash install.sh sql-standard
 bash install.sh ui-kit
 bash install.sh kontrolia-theme
-bash install.sh auth-front
-bash install.sh catalogos-suite
 bash install.sh suite-props
 ```
 
@@ -105,24 +103,6 @@ Cubre:
 - Checklist de revisión de estilos
 
 Ver: [skills/kontrolia-theme/SKILL.md](skills/kontrolia-theme/SKILL.md)
-
----
-
-### `/auth-front`
-Micro-frontend de login `@it-strategy/auth` (repo auth-front).
-
-Cubre: rol en single-spa, stack (JS + Tailwind + Redux, yarn), endpoints de autenticación, flujo login → selección de operación → dashboard, OTP WhatsApp, cambio de proyecto, contrato `sessionStorage.auth_session`, variables de entorno, Jest + Playwright (mocked/smoke), CI/CD Cloud Run, convenciones, gotchas y checklist.
-
-Ver: [skills/auth-front/SKILL.md](skills/auth-front/SKILL.md)
-
----
-
-### `/catalogos-suite`
-Micro-frontend de catálogos `@it-strategy/catalogos-suite`.
-
-Cubre: rutas `/catalogos/*` y `/configuracion/*`, stack (JS, apisauce, ui-kit, pnpm), patrón canónico de página (index + columns + service + hooks + tests) y pasos para agregar un catálogo, clase `Api` y manejo de errores, permisos (`usePermisos`, `checkPermissions`, `actions`), standalone con login real, testing con Jest, CI/CD, convenciones, gotchas y checklist.
-
-Ver: [skills/catalogos-suite/SKILL.md](skills/catalogos-suite/SKILL.md)
 
 ---
 
