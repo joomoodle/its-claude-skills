@@ -16,6 +16,10 @@ bash install.sh
 bash install.sh migrate-sqlserver-pg
 bash install.sh sql-standard
 bash install.sh ui-kit
+bash install.sh kontrolia-theme
+bash install.sh auth-front
+bash install.sh catalogos-suite
+bash install.sh suite-props
 ```
 
 Reinicia Claude Code después de instalar.
@@ -86,6 +90,48 @@ Cubre:
 - Tokens del tema Kontrolia, qué hacer si falta un componente y checklist de revisión de MR
 
 Ver: [skills/ui-kit/SKILL.md](skills/ui-kit/SKILL.md)
+
+---
+
+### `/kontrolia-theme`
+Tema Kontrolia (Brand Guide Oct 2025) en los micro-frontends: cómo se usan los colores, el gradiente y la tipografía.
+
+Cubre:
+- Paleta oficial (6 colores), tokens semánticos vs legacy y sus equivalencias, `gradients.primary`, `fontFamily`
+- Cómo llega el tema a cada proyecto: `ThemeProvider` (suite-props con `defaultTheme`, catalogos-suite vía `storeTheme$`), Tailwind `k-*` (auth-front), `configureAlerts` (ui-kit), MUI sin tema
+- Consumo en styled-components, `useTheme`/`sx`, transparencias con sufijo hex, fallbacks
+- Manrope declarada pero no cargada; grises permitidos sin token
+- Deuda conocida (HEX hardcodeados, colores fuera de marca, rojos de error, mocks duplicados), comandos `grep` para detectarla y cómo agregar un token nuevo
+- Checklist de revisión de estilos
+
+Ver: [skills/kontrolia-theme/SKILL.md](skills/kontrolia-theme/SKILL.md)
+
+---
+
+### `/auth-front`
+Micro-frontend de login `@it-strategy/auth` (repo auth-front).
+
+Cubre: rol en single-spa, stack (JS + Tailwind + Redux, yarn), endpoints de autenticación, flujo login → selección de operación → dashboard, OTP WhatsApp, cambio de proyecto, contrato `sessionStorage.auth_session`, variables de entorno, Jest + Playwright (mocked/smoke), CI/CD Cloud Run, convenciones, gotchas y checklist.
+
+Ver: [skills/auth-front/SKILL.md](skills/auth-front/SKILL.md)
+
+---
+
+### `/catalogos-suite`
+Micro-frontend de catálogos `@it-strategy/catalogos-suite`.
+
+Cubre: rutas `/catalogos/*` y `/configuracion/*`, stack (JS, apisauce, ui-kit, pnpm), patrón canónico de página (index + columns + service + hooks + tests) y pasos para agregar un catálogo, clase `Api` y manejo de errores, permisos (`usePermisos`, `checkPermissions`, `actions`), standalone con login real, testing con Jest, CI/CD, convenciones, gotchas y checklist.
+
+Ver: [skills/catalogos-suite/SKILL.md](skills/catalogos-suite/SKILL.md)
+
+---
+
+### `/suite-props`
+Shell y librería compartida `@it-strategy/utilities` (repo suite-props).
+
+Cubre: doble rol (application shell + utility module), API pública exacta y firmas de los stores RxJS (`storeUser`, `storeToast`, `storeLoader`, `storeTheme`, `storeNotificacion`…), cómo consumirla desde otro MFE, cliente `Api`, menú y permisos por módulo, dashboard (SSE) y notificaciones push FCM, standalone, CI/CD y caché del bundle (`VERSION_SUITE`), reglas, gotchas y checklist.
+
+Ver: [skills/suite-props/SKILL.md](skills/suite-props/SKILL.md)
 
 ---
 

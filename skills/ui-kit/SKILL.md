@@ -457,7 +457,7 @@ ls src/components src/shared 2>/dev/null
 
 ## 7. Tema y estilos locales
 
-El tema es estático (Kontrolia Brand Guide). En estilos propios del micro-frontend **nunca hardcodear** colores de la paleta; usar tokens del tema:
+El tema es estático (Kontrolia Brand Guide). En estilos propios del micro-frontend **nunca hardcodear** colores de la paleta; usar tokens del tema. Guía completa (inyección por proyecto, Tailwind, gradiente, Manrope, deuda y checklist): skill `/kontrolia-theme`.
 
 | Token semántico | Token legacy | HEX | Uso |
 |---|---|---|---|
