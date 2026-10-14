@@ -102,6 +102,88 @@ const acciones = await storeUser.getActionsByModulo('catalogos/usuarios')
 - Los tipos se declaran con un `.d.ts` local en cada consumidor (p. ej. `mf-gestion-nomina/src/types/theme-store.d.ts`). `pnpm build:types` genera `dist/it-strategy-utilities.d.ts`, pero no se publica.
 - En Jest, los consumidores mapean `@it-strategy/utilities` a un mock propio.
 
+### Patrón AppProviders — suscripción centralizada (un solo sub por MFE)
+
+**Problema:** si cada componente que necesita el usuario hace su propia suscripción a `storeUser.storeUser$`, el MFE termina con N suscripciones paralelas activas al mismo tiempo. Esto ocurre con `useUser` implementado con `useEffect` + `subscribe` dentro del hook.
+
+**Solución:** suscribir `storeUser` (y `storeTheme`) **una sola vez** en el provider raíz del MFE y distribuir el valor via `React.createContext`. Los componentes consumen `useContext` en lugar de crear sus propias suscripciones.
+
+```jsx
+// src/app/providers/AppProviders.jsx
+import { createContext, useEffect, useRef, useState } from "react";
+import { ThemeProvider } from "styled-components";
+import { storeTheme, storeUser } from "@it-strategy/utilities";
+import { configureAlerts } from "@it-strategy/ui-kit";
+
+export const UserContext = createContext({});
+
+export default function AppProviders({ children }) {
+  const [theme, setTheme] = useState({});
+  const [user, setUser] = useState({});
+  const alertsConfigured = useRef(false);   // guard para evitar doble configureAlerts en re-mount
+
+  useEffect(() => {
+    const themeSub = storeTheme.storeTheme$.subscribe((t) => {
+      setTheme(t);
+      if (!alertsConfigured.current && t && Object.keys(t).length) {
+        configureAlerts(t);
+        alertsConfigured.current = true;
+      }
+    });
+    const userSub = storeUser.storeUser$.subscribe(setUser);
+    return () => {
+      themeSub.unsubscribe();
+      userSub.unsubscribe();
+    };
+  }, []);
+
+  return (
+    <UserContext.Provider value={user}>
+      <ThemeProvider theme={theme}>{children}</ThemeProvider>
+    </UserContext.Provider>
+  );
+}
+```
+
+```js
+// src/shared/hooks/useUser.js
+import { useContext } from "react";
+import { UserContext } from "@app/providers/AppProviders";
+
+function useUser() {
+  const user = useContext(UserContext);
+  return { user, tipoOp: user.operation };
+}
+
+export default useUser;
+```
+
+**Reglas de este patrón:**
+- `AppProviders` es el único lugar donde se llama `.subscribe()` a `storeUser$` y `storeTheme$`.
+- `useUser()` usa `useContext(UserContext)`, **no** crea otra suscripción.
+- `configureAlerts` se llama con un `useRef` flag para que no se invoque de nuevo si el provider se re-monta (hot-reload, StrictMode).
+- Un MFE reducido de 11 suscripciones simultáneas a `storeUser` → 1 sola con este patrón.
+- En `useEffect` de componentes que dependen del usuario, usar `[user?.operation?.id]` como dep en vez de `[user]` para evitar re-ejecuciones por referencias nuevas del objeto.
+
+**Permisos (`usePermisos`) — dep `route` obligatoria:**
+```js
+// src/shared/hooks/usePermisos.js
+import { useEffect, useState } from "react";
+import { storeUser } from "@it-strategy/utilities";
+
+function usePermisos(route) {
+  const [permisos, setPermisos] = useState([]);
+  useEffect(() => {
+    const fetchData = async () => {
+      const result = await storeUser.getActionsByModulo(route || null);
+      if (result) setPermisos(result.map((item) => item.id));
+    };
+    fetchData();
+  }, [route]);   // ← route DEBE estar en deps; sin ella el hook ignora cambios de ruta
+  return { permisos };
+}
+```
+
 ### Proyectos SIN `@it-strategy/utilities`
 
 No todos los proyectos tienen props: solo existe para MFE montados por `container-suite` (import map de SystemJS). Apps Vite/standalone, PWAs o front-ends fuera del container (p. ej. `front-expedientes-cliente`) **no lo tienen** y no deben importarlo (el módulo no existe en runtime y el build/arranque falla).
@@ -243,5 +325,10 @@ Stages `test → docker-build → deploy` (`.gitlab-ci.yml`):
 - [ ] Sin `localStorage` fuera de los stores
 - [ ] Llamadas HTTP vía `Api` (token, loader y 401 centralizados)
 - [ ] Colores con tokens del tema (`/kontrolia-theme`); UI con ui-kit (`/ui-kit`)
+- [ ] `storeUser` y `storeTheme` suscritos **una sola vez** en el provider raíz del MFE (patrón AppProviders)
+- [ ] `useUser()` consume via `useContext`, **no** crea suscripción propia a `storeUser$`
+- [ ] `configureAlerts(theme)` llamado con guard `useRef` en el provider (no al nivel de módulo)
+- [ ] `useEffect` que depende de `user`: dep `[user?.operation?.id]`, no `[user]`
+- [ ] `usePermisos(route)`: `route` incluido en el array de deps
 - [ ] Probado integrado (`:3031` + container `:9000`) y en standalone
 - [ ] `pnpm test` y `pnpm lint` en verde

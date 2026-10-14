@@ -104,7 +104,7 @@ useEffect(() => {
 
 > ⚠️ En un MFE externo, `defaultTheme` **no se exporta en runtime** desde `@it-strategy/utilities` (el entry solo exporta stores/componentes; la ruta `@it-strategy/utilities/interface/ITheme` que muestra la guía no funciona vía SystemJS). Obtener el tema con `storeTheme.storeTheme$` (o `storeTheme.getSnapshot()`) como hace catalogos-suite. Los tipos se declaran con un `.d.ts` local.
 
-### 2.2 Tailwind (auth-front)
+### 2.2 Tailwind (auth-front y proyectos con Tailwind)
 
 ```js
 // tailwind.config.js
@@ -114,12 +114,77 @@ colors: {
   'custom-pink': '#f45cec', 'custom-green': '#00B3B0', // ❌ fuera de marca, no usar en código nuevo
 }
 ```
+
 Usar `text-k-primary`, `bg-k-primary`, `border-k-secondary`, `text-k-dark`, `bg-k-light`. No usar `custom-*` ni escribir HEX en `styles.css`.
+
+**Reglas Tailwind Kontrolia:**
+```jsx
+// ✅ Clases semánticas de la paleta
+<button className="bg-k-primary text-white hover:bg-k-secondary">Guardar</button>
+<div className="border border-k-secondary text-k-dark bg-k-light">Card</div>
+
+// ❌ Valores arbitrarios con HEX de la paleta
+<button className="bg-[#0c6478]">Guardar</button>   // no — aunque el HEX sea correcto
+<div className="text-[#424f55]">Texto</div>         // no — usar text-k-dark
+
+// ❌ Colores fuera de la paleta
+<span className="text-custom-green">…</span>
+<div className="bg-blue-600">…</div>
+```
+
+En proyectos nuevos con Tailwind que no tienen auth-front como base, definir los colores `k-*` desde el archivo de tema local (`src/theme/kontrolia.ts`) para no duplicar HEX en `tailwind.config.js`:
+
+```js
+// tailwind.config.js
+const { kontroliaTheme: t } = require('./src/theme/kontrolia')
+module.exports = { theme: { extend: {
+  colors: {
+    'k-primary': t.primary,    // '#0c6478'
+    'k-secondary': t.secondary, // '#09d1c7'
+    'k-accent': t.accent,      // '#82ee99'
+    'k-dark': t.dark,          // '#424f55'
+    'k-light': t.light,        // '#EFEFEF'
+  },
+  fontFamily: { sans: ['Manrope', 'sans-serif'] },
+  backgroundImage: { 'k-gradient': t.gradients.primary },
+} } }
+```
 
 ### 2.3 Alert / Toast
 
 - ui-kit: `configureAlerts(theme)` una vez al iniciar para que `Alert`/`Toast` tomen los colores del tema (por defecto ya usan Kontrolia).
 - catalogos-suite usa todavía su `src/utils/Alert.js` local (lee `storeTheme`; el botón cancelar usa `primaryColor` mientras ui-kit usa `dark`). Al migrar, reemplazar por `Alert` de ui-kit (requiere ui-kit 2.x).
+
+**`configureAlerts` — dónde y cómo llamarlo:**
+
+Llamar `configureAlerts` **dentro del provider** que suscribe a `storeTheme`, con un `useRef` como guard para evitar doble invocación en re-mounts (React StrictMode, hot-reload). **Nunca** al nivel de módulo (falla si el tema aún no llegó) ni en múltiples lugares.
+
+```jsx
+// src/app/providers/AppProviders.jsx
+const alertsConfigured = useRef(false);
+
+useEffect(() => {
+  const sub = storeTheme.storeTheme$.subscribe((t) => {
+    setTheme(t);
+    if (!alertsConfigured.current && t && Object.keys(t).length) {
+      configureAlerts(t);          // ← solo cuando el tema ya tiene datos
+      alertsConfigured.current = true;
+    }
+  });
+  return () => sub.unsubscribe();
+}, []);
+```
+
+En proyectos sin `@it-strategy/utilities` (tema local): llamar `configureAlerts(kontroliaTheme)` una vez antes de renderizar, fuera de hooks:
+
+```tsx
+// main.tsx / index.tsx
+import { configureAlerts } from '@it-strategy/ui-kit'
+import { kontroliaTheme } from './theme/kontrolia'
+
+configureAlerts(kontroliaTheme)   // sincrónico, tema local estático — OK fuera de useEffect
+ReactDOM.createRoot(…).render(<App />)
+```
 
 ### 2.4 Proyectos SIN `@it-strategy/utilities` (sin props)
 
@@ -370,5 +435,7 @@ storeTheme.setTheme({ primaryColor: 'red' })  // ❌ no-op, no tiene efecto
 - [ ] `font-family` vía `theme.fontFamily` (o `font-sans` configurado en Tailwind)
 - [ ] Transparencias con sufijo hex sobre el token, sin `rgb(${token})`
 - [ ] Sin llamadas nuevas a `storeTheme.setTheme` / `initTheme`
-- [ ] Componentes MUI sin envolver reciben colores del tema (o se usa el equivalente de ui-kit)
-- [ ] Si se agregó un token: `ITheme.ts` + `defaultTheme` + mocks + `.d.ts` + guía actualizados
+- [ ] Componentes MUI sin envolver reciben colores del tema vía `useTheme()` de styled-components (o se usa el equivalente de ui-kit)
+- [ ] `configureAlerts(theme)` llamado con guard `useRef` en el provider raíz (con props) o una vez en `main.tsx` antes de render (sin props / tema estático) — nunca en múltiples componentes
+- [ ] Tailwind: clases `bg-k-*`, `text-k-*`, `border-k-*` — sin `bg-[#HEX]` arbitrario para colores de la paleta
+- [ ] Si se agregó un token: `ITheme.ts` + `defaultTheme` + mocks + `.d.ts` + `tailwind.config.js` (si aplica) + guía actualizados
